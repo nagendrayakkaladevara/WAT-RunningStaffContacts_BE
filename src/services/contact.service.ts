@@ -1,4 +1,4 @@
-import { PrismaClient, Contact } from '@prisma/client';
+import { PrismaClient, Prisma, Contact } from '@prisma/client';
 import { createContactSchema, csvContactSchema } from '../validators/contact.validator';
 import { AppError } from '../middleware/errorHandler';
 import { z } from 'zod';
@@ -169,7 +169,7 @@ export class ContactService {
   }
 
   /**
-   * Search contacts by name (partial, case-insensitive)
+   * Search contacts by name (partial, case/spacing/punctuation-insensitive)
    */
   async searchByName(
     query: string,
@@ -178,27 +178,22 @@ export class ContactService {
   ): Promise<PaginatedResult<Contact>> {
     const skip = (page - 1) * limit;
 
-    const [data, total] = await Promise.all([
-      prisma.contact.findMany({
-        where: {
-          name: {
-            contains: query,
-            mode: 'insensitive'
-          }
-        },
-        skip,
-        take: limit,
-        orderBy: { name: 'asc' }
-      }),
-      prisma.contact.count({
-        where: {
-          name: {
-            contains: query,
-            mode: 'insensitive'
-          }
-        }
-      })
+    // Normalize both operands in PostgreSQL, so dots, spaces and punctuation
+    // do not make initials or partial names harder to find. Parameterized SQL
+    // keeps user input literal; strpos avoids LIKE wildcard expansion.
+    const normalizedQuery = Prisma.sql`regexp_replace(lower(${query}::text), '[^[:alnum:]]', '', 'g')`;
+    const normalizedName = Prisma.sql`regexp_replace(lower("name"), '[^[:alnum:]]', '', 'g')`;
+    const where = Prisma.sql`length(${normalizedQuery}) > 0 AND strpos(${normalizedName}, ${normalizedQuery}) > 0`;
+    const [data, counts] = await Promise.all([
+      prisma.$queryRaw<Contact[]>(Prisma.sql`
+        SELECT * FROM "contacts" WHERE ${where}
+        ORDER BY "name" ASC, "id" ASC LIMIT ${limit} OFFSET ${skip}
+      `),
+      prisma.$queryRaw<{ total: bigint }[]>(Prisma.sql`
+        SELECT COUNT(*) AS total FROM "contacts" WHERE ${where}
+      `)
     ]);
+    const total = Number(counts[0]?.total ?? 0);
 
     return {
       data,

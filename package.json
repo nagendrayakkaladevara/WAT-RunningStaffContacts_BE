@@ -11,7 +11,7 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run build && node --test tests/*.test.cjs"
   },
   "keywords": [],
   "author": "",
@@ -31,6 +31,7 @@
     "zod": "^4.1.13"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.5.11",
     "@prisma/extension-accelerate": "^3.0.0",
     "@types/cors": "^2.8.17",
     "@types/express": "^5.0.5",
